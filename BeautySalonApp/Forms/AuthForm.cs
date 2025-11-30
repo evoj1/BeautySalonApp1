@@ -6,10 +6,13 @@ using System.Data;
 using System.Data.OleDb;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace BeautySalonApp.Forms
 {
-    public partial class AuthForm : Form
+
+        public partial class AuthForm : Form
     {
         private DatabaseHelper db = new DatabaseHelper();
 
@@ -149,13 +152,15 @@ namespace BeautySalonApp.Forms
                         return;
                     }
 
+                    string passwordHash = PasswordHasher.HashPassword(password);
+
                     string query = "INSERT INTO Users (Username, UserPass, Role, Email) VALUES (?, ?, ?, ?)";
                     var parameters = new OleDbParameter[]
                     {
-    new OleDbParameter { Value = username },
-    new OleDbParameter { Value = password },
-    new OleDbParameter { Value = "user" },
-    new OleDbParameter { Value = string.IsNullOrEmpty(email) ? DBNull.Value : (object)email }
+new OleDbParameter { Value = username },
+new OleDbParameter { Value = passwordHash }, // сохраняем ХЭШ
+new OleDbParameter { Value = "user" },
+new OleDbParameter { Value = string.IsNullOrEmpty(email) ? DBNull.Value : (object)email }
                     };
 
                     if (db.ExecuteNonQuery(query, parameters))
@@ -222,11 +227,10 @@ namespace BeautySalonApp.Forms
             }
 
             // Если нет в кэше, проверяем в базе данных
-            string query = "SELECT * FROM Users WHERE Username = ? AND UserPass = ?";
+            string query = "SELECT * FROM Users WHERE Username = ?";
             var parameters = new OleDbParameter[]
             {
-        new OleDbParameter("@Username", username),
-        new OleDbParameter("@UserPass", password)
+new OleDbParameter("@Username", username)
             };
 
             DataTable result = db.ExecuteQuery(query, parameters);
@@ -234,6 +238,16 @@ namespace BeautySalonApp.Forms
             if (result.Rows.Count > 0)
             {
                 DataRow row = result.Rows[0];
+                string storedHash = row["UserPass"].ToString();
+
+                // Проверяем хэш
+                if (!PasswordHasher.VerifyPassword(password, storedHash))
+                {
+                    MessageBox.Show($"{debugInfo}\nНеверное имя пользователя или пароль!", "Ошибка входа",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
                 User currentUser = new User
                 {
                     Id = Convert.ToInt32(row["ID"]),
@@ -249,7 +263,7 @@ namespace BeautySalonApp.Forms
                     debugInfo += $"\n✓ Пароль закэширован для: {username}";
                 }
 
-                debugInfo += $"\n✓ Вход через БАЗУ ДАННЫХ";
+                debugInfo += $"\n✓ Вход через БАЗУ ДАННЫХ (хэш)";
                 MessageBox.Show($"{debugInfo}\nДобро пожаловать, {currentUser.Username}!", "Успешный вход",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
 
@@ -264,6 +278,7 @@ namespace BeautySalonApp.Forms
                     userForm.Show();
                 }
                 this.Hide();
+
             }
             else
             {
@@ -340,6 +355,23 @@ namespace BeautySalonApp.Forms
         private void panel1_Paint(object sender, PaintEventArgs e)
         {
 
+        }
+    }
+    internal static class PasswordHasher
+    {
+        public static string HashPassword(string password)
+        {
+            using (var sha = SHA256.Create())
+            {
+                var bytes = Encoding.UTF8.GetBytes(password);
+                var hash = sha.ComputeHash(bytes);
+                return BitConverter.ToString(hash).Replace("-", "").ToLower();
+            }
+        }
+        public static bool VerifyPassword(string password, string storedHash)
+        {
+            var hash = HashPassword(password);
+            return string.Equals(hash, storedHash, StringComparison.OrdinalIgnoreCase);
         }
     }
 }
