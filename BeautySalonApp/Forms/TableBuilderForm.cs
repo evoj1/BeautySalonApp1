@@ -34,7 +34,14 @@ namespace BeautySalonApp.Forms
 
         public TableBuilderForm()
         {
-            InitializeComponent();
+            InitializeControls();
+            this.SuspendLayout();
+            this.ClientSize = new System.Drawing.Size(878, 594);
+            this.Name = "TableBuilderForm";
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.Text = "Конструктор таблиц";
+            this.Load += new System.EventHandler(this.TableBuilderForm_Load_2);
+            this.ResumeLayout(false);
             LoadExistingTables();
             SetupDataTypes();
         }
@@ -42,16 +49,12 @@ namespace BeautySalonApp.Forms
         private void InitializeComponent()
             
         {
-            InitializeControls();
             this.SuspendLayout();
             // 
             // TableBuilderForm
             // 
-            this.ClientSize = new System.Drawing.Size(878, 594);
+            this.ClientSize = new System.Drawing.Size(493, 325);
             this.Name = "TableBuilderForm";
-            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-            this.Text = "Конструктор таблиц";
-            this.Load += new System.EventHandler(this.TableBuilderForm_Load_2);
             this.ResumeLayout(false);
 
         }
@@ -87,6 +90,19 @@ namespace BeautySalonApp.Forms
             };
             btnViewStructure.Click += (s, e) => ViewTableStructure();
             this.Controls.Add(btnViewStructure);
+
+            // Кнопка удаления таблицы
+            Button btnDeleteTable = new Button
+            {
+                Text = "Удалить таблицу",
+                Location = new Point(200, 350),
+                Size = new Size(150, 30),
+                BackColor = Color.Crimson,
+                ForeColor = Color.White
+            };
+            btnDeleteTable.Click += BtnDeleteTable_Click;
+            this.Controls.Add(btnDeleteTable);
+
 
             // Поля для создания таблицы
             Label lblTableName = new Label
@@ -701,6 +717,54 @@ namespace BeautySalonApp.Forms
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private void BtnDeleteTable_Click(object sender, EventArgs e)
+        {
+            if (dgvExistingTables.CurrentRow == null)
+            {
+                MessageBox.Show("Выберите таблицу для удаления!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string tableName = dgvExistingTables.CurrentRow.Cells[0].Value.ToString();
+
+            var result = MessageBox.Show(
+                $"Точно удалить таблицу '{tableName}' из базы данных?",
+                "Подтверждение удаления",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result != DialogResult.Yes)
+                return;
+
+            string dropQuery = $"DROP TABLE [{tableName}]";
+
+            // Пытаемся удалить
+            bool success = db.ExecuteNonQuery(dropQuery);
+
+            // ВСЕГДА проверяем, осталась ли таблица после попытки
+            bool stillExists = TableExists(tableName);
+
+            if (!stillExists)
+            {
+                // Таблицы уже нет – считаем, что всё ок, даже если был MessageBox из ExecuteNonQuery
+                MessageBox.Show($"Таблица '{tableName}' удалена из базы данных.", "Успех",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                LoadExistingTables();
+                lstStructure.Items.Clear();
+            }
+            else
+            {
+                // Таблица реально не удалилась
+                MessageBox.Show("Таблицу не удалось удалить. Возможно, она связана с другими таблицами.",
+                    "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+
 
         private void TableBuilderForm_Load(object sender, EventArgs e)
         {
