@@ -512,12 +512,12 @@ namespace BeautySalonApp.Forms
                         // col.Name      – имя новой колонки (например, LocationID)
                         // col.ReferencedTable   – таблица, в которой будет эта колонка (например, Services)
                         // col.ReferencedColumn  – столбец в НОВОЙ таблице, на который ссылаемся (обычно ID)
-
                         CreateForeignKeyInExistingTable(
-                            ownerTable: col.ReferencedTable,
-                            fkColumnName: col.Name,
-                            referencedTable: newTableName,
-                            referencedColumn: col.ReferencedColumn);
+                            ownerTable: newTableName,               // новая таблица (Test)
+                            fkColumnName: col.Name,                // T3
+                            referencedTable: col.ReferencedTable,  // Clients
+                            referencedColumn: col.ReferencedColumn // ID
+                        );
                     }
                     catch (Exception ex2)
                     {
@@ -551,19 +551,51 @@ namespace BeautySalonApp.Forms
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+        private string GetSqlTypeForColumn(string tableName, string columnName)
+        {
+            using (var connection = db.GetConnection())
+            {
+                connection.Open();
+                DataTable schema = connection.GetSchema("Columns", new string[] { null, null, tableName, null });
+
+                foreach (DataRow row in schema.Rows)
+                {
+                    if (string.Equals(row["COLUMN_NAME"].ToString(), columnName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int typeCode = Convert.ToInt32(row["DATA_TYPE"]);
+                        switch (typeCode)
+                        {
+                            case 3: return "LONG";       // COUNTER / LONG INTEGER
+                            case 2: return "INTEGER";
+                            case 7: return "DATETIME";
+                            case 202: return "TEXT(255)";
+                            default:
+                                throw new Exception(
+                                    $"Тип {tableName}.{columnName} (код {typeCode}) не поддерживается для внешнего ключа.");
+                        }
+                    }
+                }
+            }
+            throw new Exception($"Столбец {tableName}.{columnName} не найден.");
+        }
+
         private void CreateForeignKeyInExistingTable(
-        string ownerTable,        // в какой таблице создать колонку
-        string fkColumnName,      // имя новой колонки (например, LocationID)
-        string referencedTable,   // на какую таблицу ссылаемся
-        string referencedColumn)  // на какой столбец там
+    string ownerTable,        // где будет FK (Test)
+    string fkColumnName,      // имя поля FK (T3)
+    string referencedTable,   // родитель (Clients)
+    string referencedColumn)  // PK (ID)
         {
             using (var connection = db.GetConnection())
             {
                 connection.Open();
 
-                // 1. Проверяем, есть ли уже такая колонка
-                bool hasColumn = false;
+                // Тип родительского столбца
+                string sqlType = GetSqlTypeForColumn(referencedTable, referencedColumn);
+
+                // 1. Проверяем существующее поле
                 DataTable cols = connection.GetSchema("Columns", new string[] { null, null, ownerTable, null });
+                bool hasColumn = false;
+
                 foreach (DataRow r in cols.Rows)
                 {
                     if (string.Equals(r["COLUMN_NAME"].ToString(), fkColumnName, StringComparison.OrdinalIgnoreCase))
@@ -573,42 +605,44 @@ namespace BeautySalonApp.Forms
                     }
                 }
 
-                // 2. Если нет – создаём (LONG под ID)
+                // 2. Если поля нет – создаём правильного типа
                 if (!hasColumn)
                 {
-                    using (var cmd = new OleDbCommand(
-                        $"ALTER TABLE [{ownerTable}] ADD COLUMN [{fkColumnName}] LONG",
+                    using (var cmdAdd = new OleDbCommand(
+                        $"ALTER TABLE [{ownerTable}] ADD COLUMN [{fkColumnName}] {sqlType}",
                         connection))
                     {
-                        cmd.ExecuteNonQuery();
+                        cmdAdd.ExecuteNonQuery();
+                    }
+                }
+                else
+                {
+                    // (опционально) изменить тип уже существующего поля под родительский
+                    // В Access это делается ALTER COLUMN; если не хочешь рисковать данными, можно просто
+                    // показывать сообщение, что тип должен совпадать.
+                    using (var cmdAlter = new OleDbCommand(
+                        $"ALTER TABLE [{ownerTable}] ALTER COLUMN [{fkColumnName}] {sqlType}",
+                        connection))
+                    {
+                        cmdAlter.ExecuteNonQuery();
                     }
                 }
 
-                //3.Добавляем внешний ключ
+                // 3. Создаём внешний ключ
                 string constraintName = $"FK_{ownerTable}_{fkColumnName}";
-
-                using (var cmd = new OleDbCommand(
+                using (var cmdFk = new OleDbCommand(
                     $"ALTER TABLE [{ownerTable}] " +
                     $"ADD CONSTRAINT [{constraintName}] " +
                     $"FOREIGN KEY ([{fkColumnName}]) " +
                     $"REFERENCES [{referencedTable}]([{referencedColumn}])",
                     connection))
                 {
-                    cmd.ExecuteNonQuery();
-                }
-                using (var cmdRel = new OleDbCommand(
-    "INSERT INTO AppRelations (ParentTable, ParentColumn, ChildTable, ChildColumn, ConstraintName) " +
-    "VALUES (@pTab, @pCol, @cTab, @cCol, @name)", connection))
-                {
-                    cmdRel.Parameters.AddWithValue("@pTab", referencedTable);   // Locations
-                    cmdRel.Parameters.AddWithValue("@pCol", referencedColumn);  // ID
-                    cmdRel.Parameters.AddWithValue("@cTab", ownerTable);        // Services
-                    cmdRel.Parameters.AddWithValue("@cCol", fkColumnName);      // LocationID
-                    cmdRel.Parameters.AddWithValue("@name", constraintName);    // FK_Services_LocationID
-                    cmdRel.ExecuteNonQuery();
+                    cmdFk.ExecuteNonQuery();
                 }
             }
         }
+
+
 
         private bool CreateTableDirect(string createQuery)
         {
@@ -867,6 +901,21 @@ namespace BeautySalonApp.Forms
             }
         }
 
+        private string GetColumnDataType(string tableName, string columnName)
+        {
+            using (var connection = db.GetConnection())
+            {
+                connection.Open();
+                DataTable schema = connection.GetSchema("Columns", new string[] { null, null, tableName, null });
+
+                foreach (DataRow row in schema.Rows)
+                {
+                    if (string.Equals(row["COLUMN_NAME"].ToString(), columnName, StringComparison.OrdinalIgnoreCase))
+                        return row["DATA_TYPE"].ToString(); // Access возвращает код типа
+                }
+            }
+            return null;
+        }
 
 
         private void TableBuilderForm_Load(object sender, EventArgs e)
