@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Data;
 using System.Windows.Forms;
+using System.Windows.Forms.DataVisualization.Charting;
 using BeautySalonApp.Database;
 
 namespace BeautySalonApp.Forms
@@ -38,101 +39,101 @@ namespace BeautySalonApp.Forms
             {
                 case "1. Все услуги":
                     txtSqlQuery.Text = @"SELECT 
-                        ID,
-                        ServiceName AS Услуга,
-                        Category AS Категория, 
-                        Price AS Цена,
-                        Duration AS Длительность,
-                        ROUND(Price / Duration, 2) AS Цена_за_минуту
-                    FROM Services
-                    ORDER BY Category, Price DESC;";
+    ID,
+    ServiceName AS Услуга,
+    Category AS Категория, 
+    Price AS Цена,
+    Duration AS Длительность,
+    ROUND(Price / Duration, 2) AS Цена_за_минуту
+FROM Services
+ORDER BY Category, Price DESC;";
                     break;
 
                 case "2. Все клиенты":
                     txtSqlQuery.Text = @"SELECT 
-                        ID,
-                        FirstName AS Имя,
-                        LastName AS Фамилия,
-                        Phone AS Телефон,
-                        Email AS Email
-                    FROM Clients
-                    ORDER BY LastName, FirstName;";
+    ID,
+    FirstName AS Имя,
+    LastName AS Фамилия,
+    Phone AS Телефон,
+    Email AS Email
+FROM Clients
+ORDER BY LastName, FirstName;";
                     break;
 
                 case "3. Все записи":
                     txtSqlQuery.Text = @"SELECT 
-                        Appointments.ID,
-                        Clients.FirstName AS Имя,
-                        Clients.LastName AS Фамилия, 
-                        Services.ServiceName AS Услуга,
-                        Services.Price AS Цена,
-                        ROUND(Services.Price / Services.Duration, 2) AS Цена_за_минуту,
-                        Appointments.AppointmentDate AS Дата,
-                        Appointments.Status AS Статус
-                    FROM (Appointments
-                    INNER JOIN Clients ON Appointments.ClientID = Clients.ID)
-                    INNER JOIN Services ON Appointments.ServiceID = Services.ID
-                    ORDER BY Appointments.AppointmentDate DESC;";
+    Appointments.ID,
+    Clients.FirstName AS Имя,
+    Clients.LastName AS Фамилия, 
+    Services.ServiceName AS Услуга,
+    Services.Price AS Цена,
+    ROUND(Services.Price / Services.Duration, 2) AS Цена_за_минуту,
+    Appointments.AppointmentDate AS Дата,
+    Appointments.Status AS Статус
+FROM (Appointments
+INNER JOIN Clients ON Appointments.ClientID = Clients.ID)
+INNER JOIN Services ON Appointments.ServiceID = Services.ID
+ORDER BY Appointments.AppointmentDate DESC;";
                     break;
 
                 case "4. Услуги по категориям":
                     txtSqlQuery.Text = @"SELECT 
-                        Category AS Категория,
-                        COUNT(*) AS Количество_услуг,
-                        SUM(Price) AS Общая_стоимость,
-                        AVG(Price) AS Средняя_цена,
-                        AVG(ROUND(Price / Duration, 2)) AS Средняя_цена_за_минуту
-                    FROM Services
-                    GROUP BY Category
-                    ORDER BY COUNT(*) DESC;";
+    Category AS Категория,
+    COUNT(*) AS Количество_услуг,
+    SUM(Price) AS Общая_стоимость,
+    AVG(Price) AS Средняя_цена,
+    AVG(ROUND(Price / Duration, 2)) AS Средняя_цена_за_минуту
+FROM Services
+GROUP BY Category
+ORDER BY COUNT(*) DESC;";
                     break;
 
                 case "5. Записи на завтра":
                     txtSqlQuery.Text = @"SELECT 
-                        Clients.FirstName AS Имя,
-                        Clients.LastName AS Фамилия,
-                        Services.ServiceName AS Услуга,
-                        Services.Price AS Цена,
-                        ROUND(Services.Price / Services.Duration, 2) AS Цена_за_минуту,
-                        Appointments.AppointmentDate AS Время
-                    FROM (Appointments
-                    INNER JOIN Clients ON Appointments.ClientID = Clients.ID) 
-                    INNER JOIN Services ON Appointments.ServiceID = Services.ID
-                    WHERE Appointments.AppointmentDate >= Date() + 1 
-                    AND Appointments.AppointmentDate < Date() + 2
-                    AND Appointments.Status = 'Запланирован'
-                    ORDER BY Appointments.AppointmentDate;";
+    Clients.FirstName AS Имя,
+    Clients.LastName AS Фамилия,
+    Services.ServiceName AS Услуга,
+    Services.Price AS Цена,
+    ROUND(Services.Price / Services.Duration, 2) AS Цена_за_минуту,
+    Appointments.AppointmentDate AS Время
+FROM (Appointments
+INNER JOIN Clients ON Appointments.ClientID = Clients.ID) 
+INNER JOIN Services ON Appointments.ServiceID = Services.ID
+WHERE Appointments.AppointmentDate >= Date() + 1 
+  AND Appointments.AppointmentDate < Date() + 2
+  AND Appointments.Status = 'Запланирован'
+ORDER BY Appointments.AppointmentDate;";
                     break;
 
                 case "6. Выполненные записи":
                     txtSqlQuery.Text = @"SELECT 
-                        Clients.FirstName AS Имя,
-                        Clients.LastName AS Фамилия, 
-                        Services.ServiceName AS Услуга,
-                        Services.Price AS Цена,
-                        ROUND(Services.Price / Services.Duration, 2) AS Цена_за_минуту,
-                        Appointments.AppointmentDate AS Дата
-                    FROM (Appointments
-                    INNER JOIN Clients ON Appointments.ClientID = Clients.ID)
-                    INNER JOIN Services ON Appointments.ServiceID = Services.ID
-                    WHERE Appointments.Status = 'Выполнен'
-                    ORDER BY Appointments.AppointmentDate DESC;";
+    Clients.FirstName AS Имя,
+    Clients.LastName AS Фамилия, 
+    Services.ServiceName AS Услуга,
+    Services.Price AS Цена,
+    ROUND(Services.Price / Services.Duration, 2) AS Цена_за_минуту,
+    Appointments.AppointmentDate AS Дата
+FROM (Appointments
+INNER JOIN Clients ON Appointments.ClientID = Clients.ID)
+INNER JOIN Services ON Appointments.ServiceID = Services.ID
+WHERE Appointments.Status = 'Выполнен'
+ORDER BY Appointments.AppointmentDate DESC;";
                     break;
 
                 case "7. Постоянные клиенты":
                     txtSqlQuery.Text = @"SELECT 
-                        Clients.FirstName AS Имя,
-                        Clients.LastName AS Фамилия,
-                        Clients.Phone AS Телефон,
-                        COUNT(Appointments.ID) AS Количество_записей,
-                        SUM(Services.Price) AS Общая_сумма,
-                        AVG(ROUND(Services.Price / Services.Duration, 2)) AS Средняя_цена_за_минуту
-                    FROM Clients
-                    INNER JOIN Appointments ON Clients.ID = Appointments.ClientID
-                    INNER JOIN Services ON Appointments.ServiceID = Services.ID
-                    GROUP BY Clients.ID, Clients.FirstName, Clients.LastName, Clients.Phone
-                    HAVING COUNT(Appointments.ID) > 1
-                    ORDER BY COUNT(Appointments.ID) DESC;";
+    Clients.FirstName AS Имя,
+    Clients.LastName AS Фамилия,
+    Clients.Phone AS Телефон,
+    COUNT(Appointments.ID) AS Количество_записей,
+    SUM(Services.Price) AS Общая_сумма,
+    AVG(ROUND(Services.Price / Services.Duration, 2)) AS Средняя_цена_за_минуту
+FROM Clients
+INNER JOIN Appointments ON Clients.ID = Appointments.ClientID
+INNER JOIN Services ON Appointments.ServiceID = Services.ID
+GROUP BY Clients.ID, Clients.FirstName, Clients.LastName, Clients.Phone
+HAVING COUNT(Appointments.ID) > 1
+ORDER BY COUNT(Appointments.ID) DESC;";
                     break;
 
                 default:
@@ -154,6 +155,8 @@ namespace BeautySalonApp.Forms
             {
                 DataTable result = db.ExecuteQuery(txtSqlQuery.Text);
                 dataGridViewResults.DataSource = result;
+
+                BuildChart(result);
 
                 MessageBox.Show($"Запрос выполнен успешно!\nНайдено записей: {result.Rows.Count}",
                     "Результат", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -217,6 +220,68 @@ namespace BeautySalonApp.Forms
                     writer.WriteLine(string.Join(",", fields));
                 }
             }
+        }
+
+        private void BuildChart(DataTable table)
+        {
+            chartReport.Series.Clear();
+
+            if (table == null || table.Rows.Count == 0)
+                return;
+
+            string selected = cmbPredefinedQueries.SelectedItem?.ToString() ?? "";
+
+            var series = new Series("Отчет")
+            {
+                ChartType = SeriesChartType.Column,
+                XValueType = ChartValueType.String,
+                YValueType = ChartValueType.Double
+            };
+
+            if (selected.StartsWith("4. Услуги по категориям"))
+            {
+                foreach (DataRow row in table.Rows)
+                {
+                    string category = row["Категория"].ToString();
+                    double count = Convert.ToDouble(row["Количество_услуг"]);
+                    series.Points.AddXY(category, count);
+                }
+                series.LegendText = "Количество услуг";
+                chartReport.ChartAreas[0].AxisX.Title = "Категория";
+                chartReport.ChartAreas[0].AxisY.Title = "Количество услуг";
+            }
+            else if (selected.StartsWith("7. Постоянные клиенты"))
+            {
+                foreach (DataRow row in table.Rows)
+                {
+                    string client = $"{row["Фамилия"]} {row["Имя"]}";
+                    double count = Convert.ToDouble(row["Количество_записей"]);
+                    series.Points.AddXY(client, count);
+                }
+                series.LegendText = "Количество записей";
+                chartReport.ChartAreas[0].AxisX.Title = "Клиенты";
+                chartReport.ChartAreas[0].AxisY.Title = "Количество записей";
+            }
+            else if (selected.StartsWith("1. Все услуги"))
+            {
+                foreach (DataRow row in table.Rows)
+                {
+                    string service = row["Услуга"].ToString();
+                    double price = Convert.ToDouble(row["Цена"]);
+                    series.Points.AddXY(service, price);
+                }
+                series.LegendText = "Цена услуги";
+                chartReport.ChartAreas[0].AxisX.Title = "Услуги";
+                chartReport.ChartAreas[0].AxisY.Title = "Цена";
+            }
+            else
+            {
+                // для остальных отчётов пока график не строим
+                return;
+            }
+
+            chartReport.Series.Add(series);
+            chartReport.ChartAreas[0].AxisX.Interval = 1;
         }
 
         private void SqlReportsForm_Load(object sender, EventArgs e)

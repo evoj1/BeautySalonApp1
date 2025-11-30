@@ -1,5 +1,6 @@
 ﻿using System.Drawing;
 using System.Windows.Forms;
+using System.Windows.Forms.DataVisualization.Charting;
 
 namespace BeautySalonApp.Forms
 {
@@ -13,6 +14,7 @@ namespace BeautySalonApp.Forms
         private Button btnExecute;
         private Button btnGenerateReport;
         private DataGridView dataGridViewResults;
+        private Chart chartReport;
 
         protected override void Dispose(bool disposing)
         {
@@ -32,7 +34,9 @@ namespace BeautySalonApp.Forms
             this.btnExecute = new Button();
             this.btnGenerateReport = new Button();
             this.dataGridViewResults = new DataGridView();
+            this.chartReport = new Chart();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewResults)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.chartReport)).BeginInit();
             this.SuspendLayout();
 
             // lblPredefined
@@ -70,7 +74,7 @@ namespace BeautySalonApp.Forms
             this.txtSqlQuery.Size = new Size(840, 150);
             this.txtSqlQuery.TabIndex = 3;
             this.txtSqlQuery.Text = "";
-            this.txtSqlQuery.TextChanged += new System.EventHandler(this.TxtSqlQuery_TextChanged); // ДОБАВЛЕНО СОБЫТИЕ
+            this.txtSqlQuery.TextChanged += new System.EventHandler(this.TxtSqlQuery_TextChanged);
 
             // btnExecute
             this.btnExecute.BackColor = Color.DodgerBlue;
@@ -111,9 +115,23 @@ namespace BeautySalonApp.Forms
             this.dataGridViewResults.Size = new Size(840, 350);
             this.dataGridViewResults.TabIndex = 6;
 
+            // chartReport
+            ChartArea chartArea1 = new ChartArea();
+            Legend legend1 = new Legend();
+            chartArea1.Name = "ChartArea1";
+            legend1.Name = "Legend1";
+            this.chartReport.ChartAreas.Add(chartArea1);
+            this.chartReport.Legends.Add(legend1);
+            this.chartReport.Location = new Point(880, 20);
+            this.chartReport.Name = "chartReport";
+            this.chartReport.Size = new Size(600, 630);
+            this.chartReport.TabIndex = 7;
+            this.chartReport.Text = "Графический отчет";
+
             // SqlReportsForm
             this.BackColor = Color.White;
-            this.ClientSize = new Size(880, 670);
+            this.ClientSize = new Size(1500, 670);
+            this.Controls.Add(this.chartReport);
             this.Controls.Add(this.dataGridViewResults);
             this.Controls.Add(this.btnGenerateReport);
             this.Controls.Add(this.btnExecute);
@@ -126,6 +144,7 @@ namespace BeautySalonApp.Forms
             this.Text = "SQL Отчеты и Аналитика - Салон Красоты";
             this.Load += new System.EventHandler(this.SqlReportsForm_Load);
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewResults)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.chartReport)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
         }
