@@ -481,75 +481,69 @@ namespace BeautySalonApp.Forms
 
             try
             {
-                string tableName = txtTableName.Text.Trim();
+                string newTableName = txtTableName.Text.Trim();
 
-                // Проверяем, не существует ли уже таблица с таким именем
-                if (TableExists(tableName))
+                if (TableExists(newTableName))
                 {
-                    MessageBox.Show($"Таблица с именем '{tableName}' уже существует!", "Ошибка",
+                    MessageBox.Show($"Таблица с именем '{newTableName}' уже существует!", "Ошибка",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
-                // Сначала создаем таблицу без Foreign Key
-                string createQuery = GenerateCreateTableQuery(tableName);
-
-                // Используем прямой вызов для создания таблицы
+                // 1. Создаём новую таблицу (как раньше)
+                string createQuery = GenerateCreateTableQuery(newTableName);
                 bool tableCreated = CreateTableDirect(createQuery);
 
-                if (tableCreated)
+                if (!tableCreated && !TableExists(newTableName))
                 {
-                    // Теперь ВЫЗЫВАЕМ метод добавления Foreign Key constraints
-                    bool fkSuccess = true;
-                    string fkErrors = "";
+                    MessageBox.Show("Ошибка при создании таблицы!", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
 
-                    var foreignKeyColumns = columns.Where(c => c.IsForeignKey).ToList();
-                    if (foreignKeyColumns.Count > 0)
+                // 2. Для всех колонок с IsForeignKey создаём FK в выбранной таблице
+                bool fkSuccess = true;
+                string fkErrors = "";
+
+                foreach (var col in columns.Where(c => c.IsForeignKey))
+                {
+                    try
                     {
-                        fkSuccess = AddForeignKeyConstraints(tableName, foreignKeyColumns, out fkErrors);
+                        // col.Name      – имя новой колонки (например, LocationID)
+                        // col.ReferencedTable   – таблица, в которой будет эта колонка (например, Services)
+                        // col.ReferencedColumn  – столбец в НОВОЙ таблице, на который ссылаемся (обычно ID)
+
+                        CreateForeignKeyInExistingTable(
+                            ownerTable: col.ReferencedTable,
+                            fkColumnName: col.Name,
+                            referencedTable: newTableName,
+                            referencedColumn: col.ReferencedColumn);
                     }
-
-                    // Обновляем список таблиц
-                    LoadExistingTables();
-
-                    string message = $"Таблица '{tableName}' успешно создана!";
-                    if (!fkSuccess && foreignKeyColumns.Count > 0)
+                    catch (Exception ex2)
                     {
-                        message += $"\n\nНо возникли проблемы со связями:\n{fkErrors}";
-                        MessageBox.Show(message, "Таблица создана с предупреждениями",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        fkSuccess = false;
+                        fkErrors += $"Ошибка связи {col.ReferencedTable}.{col.Name} → {newTableName}.{col.ReferencedColumn}: {ex2.Message}\n";
                     }
-                    else
-                    {
-                        MessageBox.Show(message, "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
+                }
 
-                    // Очищаем форму
-                    columns.Clear();
-                    lstColumns.Items.Clear();
-                    txtTableName.Clear();
+                LoadExistingTables();
+
+                string message = $"Таблица '{newTableName}' успешно создана!";
+                if (!fkSuccess)
+                {
+                    message += $"\n\nНо возникли проблемы со связями:\n{fkErrors}";
+                    MessageBox.Show(message, "Таблица создана с предупреждениями",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
                 else
                 {
-                    // Проверяем, возможно таблица все же создалась
-                    if (TableExists(tableName))
-                    {
-                        MessageBox.Show($"Таблица '{tableName}' создана, но возникли незначительные ошибки!", "Предупреждение",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-                        // Очищаем форму
-                        columns.Clear();
-                        lstColumns.Items.Clear();
-                        txtTableName.Clear();
-                        LoadExistingTables();
-                    }
-                    else
-                    {
-                        MessageBox.Show("Ошибка при создании таблицы!", "Ошибка",
-                            MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
+                    MessageBox.Show(message, "Успех",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
+
+                columns.Clear();
+                lstColumns.Items.Clear();
+                txtTableName.Clear();
             }
             catch (Exception ex)
             {
@@ -557,6 +551,65 @@ namespace BeautySalonApp.Forms
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+        private void CreateForeignKeyInExistingTable(
+        string ownerTable,        // в какой таблице создать колонку
+        string fkColumnName,      // имя новой колонки (например, LocationID)
+        string referencedTable,   // на какую таблицу ссылаемся
+        string referencedColumn)  // на какой столбец там
+        {
+            using (var connection = db.GetConnection())
+            {
+                connection.Open();
+
+                // 1. Проверяем, есть ли уже такая колонка
+                bool hasColumn = false;
+                DataTable cols = connection.GetSchema("Columns", new string[] { null, null, ownerTable, null });
+                foreach (DataRow r in cols.Rows)
+                {
+                    if (string.Equals(r["COLUMN_NAME"].ToString(), fkColumnName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasColumn = true;
+                        break;
+                    }
+                }
+
+                // 2. Если нет – создаём (LONG под ID)
+                if (!hasColumn)
+                {
+                    using (var cmd = new OleDbCommand(
+                        $"ALTER TABLE [{ownerTable}] ADD COLUMN [{fkColumnName}] LONG",
+                        connection))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                //3.Добавляем внешний ключ
+                string constraintName = $"FK_{ownerTable}_{fkColumnName}";
+
+                using (var cmd = new OleDbCommand(
+                    $"ALTER TABLE [{ownerTable}] " +
+                    $"ADD CONSTRAINT [{constraintName}] " +
+                    $"FOREIGN KEY ([{fkColumnName}]) " +
+                    $"REFERENCES [{referencedTable}]([{referencedColumn}])",
+                    connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmdRel = new OleDbCommand(
+    "INSERT INTO AppRelations (ParentTable, ParentColumn, ChildTable, ChildColumn, ConstraintName) " +
+    "VALUES (@pTab, @pCol, @cTab, @cCol, @name)", connection))
+                {
+                    cmdRel.Parameters.AddWithValue("@pTab", referencedTable);   // Locations
+                    cmdRel.Parameters.AddWithValue("@pCol", referencedColumn);  // ID
+                    cmdRel.Parameters.AddWithValue("@cTab", ownerTable);        // Services
+                    cmdRel.Parameters.AddWithValue("@cCol", fkColumnName);      // LocationID
+                    cmdRel.Parameters.AddWithValue("@name", constraintName);    // FK_Services_LocationID
+                    cmdRel.ExecuteNonQuery();
+                }
+            }
+        }
+
         private bool CreateTableDirect(string createQuery)
         {
             try
@@ -730,7 +783,7 @@ namespace BeautySalonApp.Forms
             string tableName = dgvExistingTables.CurrentRow.Cells[0].Value.ToString();
 
             var result = MessageBox.Show(
-                $"Точно удалить таблицу '{tableName}' из базы данных?",
+                $"Точно удалить таблицу '{tableName}' и все связи, в которых она участвует?",
                 "Подтверждение удаления",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
@@ -738,29 +791,79 @@ namespace BeautySalonApp.Forms
             if (result != DialogResult.Yes)
                 return;
 
-            string dropQuery = $"DROP TABLE [{tableName}]";
-
-            // Пытаемся удалить
-            bool success = db.ExecuteNonQuery(dropQuery);
-
-            // ВСЕГДА проверяем, осталась ли таблица после попытки
-            bool stillExists = TableExists(tableName);
-
-            if (!stillExists)
+            try
             {
-                // Таблицы уже нет – считаем, что всё ок, даже если был MessageBox из ExecuteNonQuery
-                MessageBox.Show($"Таблица '{tableName}' удалена из базы данных.", "Успех",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                using (var connection = db.GetConnection())
+                {
+                    connection.Open();
+
+                    // 1. Находим все связи из нашей служебной таблицы AppRelations
+                    var relations = new List<(string ChildTable, string ConstraintName)>();
+
+                    using (var cmd = new OleDbCommand(
+                        "SELECT ChildTable, ConstraintName " +
+                        "FROM AppRelations " +
+                        "WHERE ParentTable = @t OR ChildTable = @t", connection))
+                    {
+                        cmd.Parameters.AddWithValue("@t", tableName);
+
+                        using (var r = cmd.ExecuteReader())
+                        {
+                            while (r.Read())
+                            {
+                                string childTable = r["ChildTable"].ToString();
+                                string constraintName = r["ConstraintName"].ToString();
+                                relations.Add((childTable, constraintName));
+                            }
+                        }
+                    }
+
+                    // 2. Снимаем все найденные внешние ключи
+                    foreach (var rel in relations)
+                    {
+                        string sqlDropFk =
+                            $"ALTER TABLE [{rel.ChildTable}] DROP CONSTRAINT [{rel.ConstraintName}]";
+
+                        try
+                        {
+                            using (var cmdDropFk = new OleDbCommand(sqlDropFk, connection))
+                            {
+                                cmdDropFk.ExecuteNonQuery();
+                            }
+                        }
+                        catch
+                        {
+                            // если не получилось снять constraint – продолжаем остальные
+                        }
+                    }
+
+                    // 3. Удаляем записи о связях для этой таблицы из AppRelations
+                    using (var cmdDel = new OleDbCommand(
+                        "DELETE FROM AppRelations WHERE ParentTable = @t OR ChildTable = @t",
+                        connection))
+                    {
+                        cmdDel.Parameters.AddWithValue("@t", tableName);
+                        cmdDel.ExecuteNonQuery();
+                    }
+
+                    // 4. Удаляем саму таблицу
+                    using (var cmdDrop = new OleDbCommand(
+                        $"DROP TABLE [{tableName}]", connection))
+                    {
+                        cmdDrop.ExecuteNonQuery();
+                    }
+                }
+
+                MessageBox.Show($"Таблица '{tableName}' и все связанные с ней ограничения удалены.",
+                    "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 LoadExistingTables();
                 lstStructure.Items.Clear();
             }
-            else
+            catch (Exception ex)
             {
-                // Таблица реально не удалилась
-                MessageBox.Show("Таблицу не удалось удалить. Возможно, она связана с другими таблицами.",
-                    "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Не удалось удалить таблицу: {ex.Message}",
+                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
