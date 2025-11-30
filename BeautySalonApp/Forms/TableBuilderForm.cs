@@ -1,0 +1,720 @@
+﻿using BeautySalonApp.Database;
+using BeautySalonApp.Models;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.OleDb;
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
+
+namespace BeautySalonApp.Forms
+{
+    public partial class TableBuilderForm : Form
+    {
+        private DatabaseHelper db = new DatabaseHelper();
+        private List<TableColumn> columns = new List<TableColumn>();
+        private DataTable existingTables;
+
+        // Элементы управления
+        private DataGridView dgvExistingTables;
+        private ListBox lstColumns;
+        private ListBox lstStructure;
+        private ComboBox cmbDataType;
+        private ComboBox cmbRefTable;
+        private ComboBox cmbRefColumn;
+        private TextBox txtTableName;
+        private TextBox txtColumnName;
+        private CheckBox chkPrimaryKey;
+        private CheckBox chkForeignKey;
+        private Button btnAddColumn;
+        private Button btnRemoveColumn;
+        private Button btnCreateTable;
+        private Button btnViewStructure;
+
+        public TableBuilderForm()
+        {
+            InitializeComponent();
+            LoadExistingTables();
+            SetupDataTypes();
+        }
+
+        private void InitializeComponent()
+            
+        {
+            InitializeControls();
+            this.SuspendLayout();
+            // 
+            // TableBuilderForm
+            // 
+            this.ClientSize = new System.Drawing.Size(878, 594);
+            this.Name = "TableBuilderForm";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
+            this.Text = "Конструктор таблиц";
+            this.Load += new System.EventHandler(this.TableBuilderForm_Load_2);
+            this.ResumeLayout(false);
+
+        }
+
+        private void InitializeControls()
+        {
+            // DataGridView для существующих таблиц
+            dgvExistingTables = new DataGridView
+            {
+                Location = new Point(20, 20),
+                Size = new Size(400, 150),
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect
+            };
+            this.Controls.Add(dgvExistingTables);
+
+            // ListBox для структуры таблицы
+            lstStructure = new ListBox
+            {
+                Location = new Point(20, 190),
+                Size = new Size(400, 150)
+            };
+            this.Controls.Add(lstStructure);
+
+            // Кнопка просмотра структуры
+            btnViewStructure = new Button
+            {
+                Text = "Просмотреть структуру",
+                Location = new Point(20, 350),
+                Size = new Size(150, 30),
+                BackColor = Color.DodgerBlue,
+                ForeColor = Color.White
+            };
+            btnViewStructure.Click += (s, e) => ViewTableStructure();
+            this.Controls.Add(btnViewStructure);
+
+            // Поля для создания таблицы
+            Label lblTableName = new Label
+            {
+                Text = "Имя таблицы:",
+                Location = new Point(450, 20),
+                Size = new Size(100, 20),
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblTableName);
+
+            txtTableName = new TextBox
+            {
+                Location = new Point(550, 20),
+                Size = new Size(200, 25),
+                Font = new Font("Arial", 9)
+            };
+            this.Controls.Add(txtTableName);
+
+            // Поля для добавления колонок
+            Label lblColumnName = new Label
+            {
+                Text = "Имя колонки:",
+                Location = new Point(450, 60),
+                Size = new Size(100, 20),
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblColumnName);
+
+            txtColumnName = new TextBox
+            {
+                Location = new Point(550, 60),
+                Size = new Size(200, 25),
+                Font = new Font("Arial", 9)
+            };
+            this.Controls.Add(txtColumnName);
+
+            Label lblDataType = new Label
+            {
+                Text = "Тип данных:",
+                Location = new Point(450, 100),
+                Size = new Size(100, 20),
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblDataType);
+
+            cmbDataType = new ComboBox
+            {
+                Location = new Point(550, 100),
+                Size = new Size(200, 25),
+                Font = new Font("Arial", 9)
+            };
+            this.Controls.Add(cmbDataType);
+
+            chkPrimaryKey = new CheckBox
+            {
+                Text = "Primary Key",
+                Location = new Point(450, 140),
+                Size = new Size(100, 20),
+                Font = new Font("Arial", 9)
+            };
+            this.Controls.Add(chkPrimaryKey);
+
+            chkForeignKey = new CheckBox
+            {
+                Text = "Foreign Key",
+                Location = new Point(550, 140),
+                Size = new Size(100, 20),
+                Font = new Font("Arial", 9)
+            };
+            chkForeignKey.CheckedChanged += ChkForeignKey_CheckedChanged;
+            this.Controls.Add(chkForeignKey);
+
+            Label lblRefTable = new Label
+            {
+                Text = "Ссылочная таблица:",
+                Location = new Point(450, 180),
+                Size = new Size(120, 20),
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblRefTable);
+
+            cmbRefTable = new ComboBox
+            {
+                Location = new Point(580, 180),
+                Size = new Size(170, 25),
+                Font = new Font("Arial", 9),
+                Enabled = false
+            };
+            cmbRefTable.SelectedIndexChanged += CmbRefTable_SelectedIndexChanged;
+            this.Controls.Add(cmbRefTable);
+
+            Label lblRefColumn = new Label
+            {
+                Text = "Ссылочная колонка:",
+                Location = new Point(450, 220),
+                Size = new Size(120, 20),
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblRefColumn);
+
+            cmbRefColumn = new ComboBox
+            {
+                Location = new Point(580, 220),
+                Size = new Size(170, 25),
+                Font = new Font("Arial", 9),
+                Enabled = false
+            };
+            this.Controls.Add(cmbRefColumn);
+
+            // Кнопки для управления колонками
+            btnAddColumn = new Button
+            {
+                Text = "Добавить колонку",
+                Location = new Point(450, 260),
+                Size = new Size(120, 35),
+                BackColor = Color.Green,
+                ForeColor = Color.White,
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            btnAddColumn.Click += BtnAddColumn_Click;
+            this.Controls.Add(btnAddColumn);
+
+            btnRemoveColumn = new Button
+            {
+                Text = "Удалить колонку",
+                Location = new Point(580, 260),
+                Size = new Size(120, 35),
+                BackColor = Color.Crimson,
+                ForeColor = Color.White,
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            btnRemoveColumn.Click += BtnRemoveColumn_Click;
+            this.Controls.Add(btnRemoveColumn);
+
+            // ListBox для добавленных колонок
+            lstColumns = new ListBox
+            {
+                Location = new Point(450, 310),
+                Size = new Size(300, 150),
+                Font = new Font("Arial", 9)
+            };
+            this.Controls.Add(lstColumns);
+
+            // Кнопка создания таблицы
+            btnCreateTable = new Button
+            {
+                Text = "Создать таблицу",
+                Location = new Point(450, 480),
+                Size = new Size(150, 40),
+                BackColor = Color.DarkSlateBlue,
+                ForeColor = Color.White,
+                Font = new Font("Arial", 10, FontStyle.Bold)
+            };
+            btnCreateTable.Click += BtnCreateTable_Click;
+            this.Controls.Add(btnCreateTable);
+        }
+
+        private void ChkForeignKey_CheckedChanged(object sender, EventArgs e)
+        {
+            cmbRefTable.Enabled = chkForeignKey.Checked;
+            cmbRefColumn.Enabled = chkForeignKey.Checked;
+
+            if (!chkForeignKey.Checked)
+            {
+                cmbRefTable.SelectedIndex = -1;
+                cmbRefColumn.SelectedIndex = -1;
+            }
+        }
+
+        private void CmbRefTable_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (cmbRefTable.SelectedItem != null)
+            {
+                LoadReferenceColumns(cmbRefTable.SelectedItem.ToString());
+            }
+        }
+
+        private void BtnAddColumn_Click(object sender, EventArgs e)
+        {
+            AddColumn();
+        }
+
+        private void BtnRemoveColumn_Click(object sender, EventArgs e)
+        {
+            RemoveSelectedColumn();
+        }
+
+        private void BtnCreateTable_Click(object sender, EventArgs e)
+        {
+            CreateTable();
+        }
+
+        private void SetupDataTypes()
+        {
+            // Типы данных для MS Access
+            cmbDataType.Items.AddRange(new string[]
+            {
+                "INTEGER",
+                "TEXT(255)",
+                "MEMO",
+                "CURRENCY",
+                "DATETIME",
+                "DATE",
+                "BOOLEAN",
+                "SINGLE",
+                "DOUBLE",
+                "LONG"
+            });
+            cmbDataType.SelectedIndex = 0;
+        }
+
+        private void LoadExistingTables()
+        {
+            try
+            {
+                // Получаем список таблиц из MS Access
+                using (var connection = db.GetConnection())
+                {
+                    connection.Open();
+                    DataTable schema = connection.GetSchema("Tables");
+
+                    existingTables = new DataTable();
+                    existingTables.Columns.Add("TableName");
+
+                    foreach (DataRow row in schema.Rows)
+                    {
+                        string tableType = row["TABLE_TYPE"].ToString();
+                        if (tableType == "TABLE")
+                        {
+                            string tableName = row["TABLE_NAME"].ToString();
+                            if (!tableName.StartsWith("MSys")) // Исключаем системные таблицы
+                            {
+                                existingTables.Rows.Add(tableName);
+                            }
+                        }
+                    }
+
+                    dgvExistingTables.DataSource = existingTables;
+
+                    // Обновляем комбобокс для Foreign Key
+                    cmbRefTable.Items.Clear();
+                    foreach (DataRow row in existingTables.Rows)
+                    {
+                        cmbRefTable.Items.Add(row["TableName"]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки таблиц: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadReferenceColumns(string tableName)
+        {
+            cmbRefColumn.Items.Clear();
+
+            try
+            {
+                using (var connection = db.GetConnection())
+                {
+                    connection.Open();
+                    DataTable schema = connection.GetSchema("Columns", new string[] { null, null, tableName, null });
+
+                    foreach (DataRow row in schema.Rows)
+                    {
+                        cmbRefColumn.Items.Add(row["COLUMN_NAME"]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки колонок таблицы {tableName}: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void AddColumn()
+        {
+            if (string.IsNullOrWhiteSpace(txtColumnName.Text))
+            {
+                MessageBox.Show("Введите имя колонки!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (cmbDataType.SelectedItem == null)
+            {
+                MessageBox.Show("Выберите тип данных!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            TableColumn column = new TableColumn
+            {
+                Name = txtColumnName.Text.Trim(),
+                DataType = cmbDataType.SelectedItem.ToString(),
+                IsPrimaryKey = chkPrimaryKey.Checked,
+                IsForeignKey = chkForeignKey.Checked
+            };
+
+            if (chkForeignKey.Checked)
+            {
+                if (cmbRefTable.SelectedItem == null)
+                {
+                    MessageBox.Show("Выберите таблицу для связи!", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (cmbRefColumn.SelectedItem == null)
+                {
+                    MessageBox.Show("Выберите колонку для связи!", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                column.ReferencedTable = cmbRefTable.SelectedItem.ToString();
+                column.ReferencedColumn = cmbRefColumn.SelectedItem.ToString();
+            }
+
+            columns.Add(column);
+            UpdateColumnsList();
+
+            // Очищаем поля
+            txtColumnName.Clear();
+            chkPrimaryKey.Checked = false;
+            chkForeignKey.Checked = false;
+            cmbRefTable.SelectedIndex = -1;
+            cmbRefColumn.SelectedIndex = -1;
+            cmbRefTable.Enabled = false;
+            cmbRefColumn.Enabled = false;
+        }
+
+        private void RemoveSelectedColumn()
+        {
+            if (lstColumns.SelectedIndex >= 0 && lstColumns.SelectedIndex < columns.Count)
+            {
+                columns.RemoveAt(lstColumns.SelectedIndex);
+                UpdateColumnsList();
+            }
+            else
+            {
+                MessageBox.Show("Выберите колонку для удаления!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void UpdateColumnsList()
+        {
+            lstColumns.Items.Clear();
+            foreach (var column in columns)
+            {
+                string pk = column.IsPrimaryKey ? " 🔑" : "";
+                string fk = column.IsForeignKey ? $" 🔗→ {column.ReferencedTable}.{column.ReferencedColumn}" : "";
+                lstColumns.Items.Add($"{column.Name} ({column.DataType}){pk}{fk}");
+            }
+        }
+
+        private void CreateTable()
+        {
+            if (string.IsNullOrWhiteSpace(txtTableName.Text))
+            {
+                MessageBox.Show("Введите имя таблицы!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (columns.Count == 0)
+            {
+                MessageBox.Show("Добавьте хотя бы одну колонку!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                string tableName = txtTableName.Text.Trim();
+
+                // Проверяем, не существует ли уже таблица с таким именем
+                if (TableExists(tableName))
+                {
+                    MessageBox.Show($"Таблица с именем '{tableName}' уже существует!", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                // Сначала создаем таблицу без Foreign Key
+                string createQuery = GenerateCreateTableQuery(tableName);
+
+                // Используем прямой вызов для создания таблицы
+                bool tableCreated = CreateTableDirect(createQuery);
+
+                if (tableCreated)
+                {
+                    // Теперь ВЫЗЫВАЕМ метод добавления Foreign Key constraints
+                    bool fkSuccess = true;
+                    string fkErrors = "";
+
+                    var foreignKeyColumns = columns.Where(c => c.IsForeignKey).ToList();
+                    if (foreignKeyColumns.Count > 0)
+                    {
+                        fkSuccess = AddForeignKeyConstraints(tableName, foreignKeyColumns, out fkErrors);
+                    }
+
+                    // Обновляем список таблиц
+                    LoadExistingTables();
+
+                    string message = $"Таблица '{tableName}' успешно создана!";
+                    if (!fkSuccess && foreignKeyColumns.Count > 0)
+                    {
+                        message += $"\n\nНо возникли проблемы со связями:\n{fkErrors}";
+                        MessageBox.Show(message, "Таблица создана с предупреждениями",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    else
+                    {
+                        MessageBox.Show(message, "Успех",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+
+                    // Очищаем форму
+                    columns.Clear();
+                    lstColumns.Items.Clear();
+                    txtTableName.Clear();
+                }
+                else
+                {
+                    // Проверяем, возможно таблица все же создалась
+                    if (TableExists(tableName))
+                    {
+                        MessageBox.Show($"Таблица '{tableName}' создана, но возникли незначительные ошибки!", "Предупреждение",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+                        // Очищаем форму
+                        columns.Clear();
+                        lstColumns.Items.Clear();
+                        txtTableName.Clear();
+                        LoadExistingTables();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Ошибка при создании таблицы!", "Ошибка",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка создания таблицы: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private bool CreateTableDirect(string createQuery)
+        {
+            try
+            {
+                using (var connection = db.GetConnection())
+                {
+                    connection.Open();
+                    using (var command = new OleDbCommand(createQuery, connection))
+                    {
+                        command.ExecuteNonQuery();
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Логируем ошибку, но не прерываем выполнение
+                System.Diagnostics.Debug.WriteLine($"Create table error: {ex.Message}");
+                return false;
+            }
+        }
+        private bool TableExists(string tableName)
+        {
+            try
+            {
+                using (var connection = db.GetConnection())
+                {
+                    connection.Open();
+                    DataTable schema = connection.GetSchema("Tables");
+                    foreach (DataRow row in schema.Rows)
+                    {
+                        if (row["TABLE_NAME"].ToString().Equals(tableName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Игнорируем ошибки при проверке
+            }
+            return false;
+        }
+
+        private string GenerateCreateTableQuery(string tableName)
+        {
+            List<string> columnDefinitions = new List<string>();
+            var primaryKeyColumns = columns.Where(c => c.IsPrimaryKey).ToList();
+
+            foreach (var column in columns)
+            {
+                string definition = $"[{column.Name}] {column.DataType}";
+
+                // Для MS Access лучше не добавлять PRIMARY KEY в определении колонки
+                // Вместо этого создадим отдельное ограничение
+                columnDefinitions.Add(definition);
+            }
+
+            // Добавляем PRIMARY KEY constraint отдельно, если есть первичные ключи
+            if (primaryKeyColumns.Count > 0)
+            {
+                string pkColumns = string.Join(", ", primaryKeyColumns.Select(c => $"[{c.Name}]"));
+                columnDefinitions.Add($"PRIMARY KEY ({pkColumns})");
+            }
+
+            return $"CREATE TABLE [{tableName}] ({string.Join(", ", columnDefinitions)})";
+        }
+
+
+        private bool AddForeignKeyConstraints(string tableName, List<TableColumn> foreignKeyColumns, out string errorMessages)
+        {
+            errorMessages = "";
+            bool overallSuccess = true;
+
+            foreach (var column in foreignKeyColumns)
+            {
+                try
+                {
+                    // Создаем уникальное имя для ограничения
+                    string constraintName = $"FK_{tableName}_{column.Name}_{DateTime.Now:HHmmss}";
+
+                    string fkQuery = $@"ALTER TABLE [{tableName}] 
+                              ADD CONSTRAINT [{constraintName}] 
+                              FOREIGN KEY ([{column.Name}]) 
+                              REFERENCES [{column.ReferencedTable}]([{column.ReferencedColumn}])";
+
+                    using (var connection = db.GetConnection())
+                    {
+                        connection.Open();
+                        using (var command = new OleDbCommand(fkQuery, connection))
+                        {
+                            command.ExecuteNonQuery();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    overallSuccess = false;
+                    errorMessages += $"Ошибка создания связи для {column.Name}: {ex.Message}\n";
+                    // Логируем ошибку для отладки
+                    System.Diagnostics.Debug.WriteLine($"FK error for {column.Name}: {ex.Message}");
+                }
+            }
+
+            return overallSuccess;
+        }
+        private bool ForeignKeyExists(string tableName, string columnName)
+        {
+            try
+            {
+                // Эта проверка сложна для MS Access, поэтому просто возвращаем false
+                // В реальном приложении можно реализовать проверку через schema
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ViewTableStructure()
+        {
+            if (dgvExistingTables.CurrentRow == null)
+            {
+                MessageBox.Show("Выберите таблицу для просмотра!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string tableName = dgvExistingTables.CurrentRow.Cells[0].Value.ToString();
+
+            try
+            {
+                // Получаем структуру таблицы для MS Access
+                using (var connection = db.GetConnection())
+                {
+                    connection.Open();
+                    DataTable schema = connection.GetSchema("Columns", new string[] { null, null, tableName, null });
+
+                    lstStructure.Items.Clear();
+                    lstStructure.Items.Add($"Структура таблицы: {tableName}");
+                    lstStructure.Items.Add("");
+
+                    foreach (DataRow row in schema.Rows)
+                    {
+                        string columnName = row["COLUMN_NAME"].ToString();
+                        string dataType = row["DATA_TYPE"].ToString();
+                        string isNullable = row["IS_NULLABLE"].ToString();
+
+                        lstStructure.Items.Add($"{columnName} ({dataType}) {(isNullable == "YES" ? "NULL" : "NOT NULL")}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка получения структуры: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void TableBuilderForm_Load(object sender, EventArgs e)
+        {
+            // Дополнительная инициализация при необходимости
+        }
+
+        private void TableBuilderForm_Load_1(object sender, EventArgs e)
+        {
+            // Удалите этот метод, так как он дублирует TableBuilderForm_Load
+        }
+
+        private void TableBuilderForm_Load_2(object sender, EventArgs e)
+        {
+
+        }
+    }
+}
