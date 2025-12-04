@@ -31,6 +31,8 @@ namespace BeautySalonApp.Forms
         private Button btnRemoveColumn;
         private Button btnCreateTable;
         private Button btnViewStructure;
+        private ComboBox cmbPkTargetTable;
+
 
         public TableBuilderForm()
         {
@@ -165,6 +167,31 @@ namespace BeautySalonApp.Forms
                 Font = new Font("Arial", 9)
             };
             this.Controls.Add(chkPrimaryKey);
+
+            Label lblPkTarget = new Label
+            {
+                Text = "Связать PK с таблицей:",
+                Location = new Point(450, 165),
+                Size = new Size(150, 20),
+                Font = new Font("Arial", 9, FontStyle.Bold)
+            };
+            this.Controls.Add(lblPkTarget);
+
+            cmbPkTargetTable = new ComboBox
+            {
+                Location = new Point(600, 165),
+                Size = new Size(150, 25),
+                Font = new Font("Arial", 9),
+                Enabled = false
+            };
+            this.Controls.Add(cmbPkTargetTable);
+
+            chkPrimaryKey.CheckedChanged += (s, e) =>
+            {
+                cmbPkTargetTable.Enabled = chkPrimaryKey.Checked;
+                if (!chkPrimaryKey.Checked)
+                    cmbPkTargetTable.SelectedIndex = -1;
+            };
 
             chkForeignKey = new CheckBox
             {
@@ -349,6 +376,12 @@ namespace BeautySalonApp.Forms
                     {
                         cmbRefTable.Items.Add(row["TableName"]);
                     }
+
+                    cmbPkTargetTable.Items.Clear();
+                    foreach (DataRow row in existingTables.Rows)
+                    {
+                        cmbPkTargetTable.Items.Add(row["TableName"]);
+                    }
                 }
             }
             catch (Exception ex)
@@ -406,6 +439,11 @@ namespace BeautySalonApp.Forms
                 IsForeignKey = chkForeignKey.Checked
             };
 
+            if (column.IsPrimaryKey && cmbPkTargetTable.Enabled && cmbPkTargetTable.SelectedItem != null)
+            {
+                column.PkTargetTable = cmbPkTargetTable.SelectedItem.ToString();
+            }
+
             if (chkForeignKey.Checked)
             {
                 if (cmbRefTable.SelectedItem == null)
@@ -433,9 +471,11 @@ namespace BeautySalonApp.Forms
             chkPrimaryKey.Checked = false;
             chkForeignKey.Checked = false;
             cmbRefTable.SelectedIndex = -1;
+            cmbPkTargetTable.SelectedIndex = -1;
             cmbRefColumn.SelectedIndex = -1;
             cmbRefTable.Enabled = false;
             cmbRefColumn.Enabled = false;
+            cmbPkTargetTable.Enabled = false;
         }
 
         private void RemoveSelectedColumn()
@@ -490,7 +530,7 @@ namespace BeautySalonApp.Forms
                     return;
                 }
 
-                // 1. Создаём новую таблицу (как раньше)
+                // 1. Создаём новую таблицу
                 string createQuery = GenerateCreateTableQuery(newTableName);
                 bool tableCreated = CreateTableDirect(createQuery);
 
@@ -501,28 +541,44 @@ namespace BeautySalonApp.Forms
                     return;
                 }
 
-                // 2. Для всех колонок с IsForeignKey создаём FK в выбранной таблице
                 bool fkSuccess = true;
                 string fkErrors = "";
 
-                foreach (var col in columns.Where(c => c.IsForeignKey))
+                // 2. Для PK-колонок с выбранной таблицей-назначением
+                //    добавляем поле-FK в выбранную таблицу и связываем с PK новой
+                foreach (var pkCol in columns.Where(c => c.IsPrimaryKey && !string.IsNullOrEmpty(c.PkTargetTable)))
                 {
                     try
                     {
-                        // col.Name      – имя новой колонки (например, LocationID)
-                        // col.ReferencedTable   – таблица, в которой будет эта колонка (например, Services)
-                        // col.ReferencedColumn  – столбец в НОВОЙ таблице, на который ссылаемся (обычно ID)
-                        CreateForeignKeyInExistingTable(
-                            ownerTable: newTableName,               // новая таблица (Test)
-                            fkColumnName: col.Name,                // T3
-                            referencedTable: col.ReferencedTable,  // Clients
-                            referencedColumn: col.ReferencedColumn // ID
-                        );
+                        AddForeignKeyFieldInOtherTable(
+                            parentTable: newTableName,
+                            parentColumn: pkCol.Name,
+                            childTable: pkCol.PkTargetTable);
                     }
                     catch (Exception ex2)
                     {
                         fkSuccess = false;
-                        fkErrors += $"Ошибка связи {col.ReferencedTable}.{col.Name} → {newTableName}.{col.ReferencedColumn}: {ex2.Message}\n";
+                        fkErrors +=
+                            $"Ошибка связи {newTableName}.{pkCol.Name} → {pkCol.PkTargetTable}: {ex2.Message}\n";
+                    }
+                }
+
+                // 3. (по желанию) обработка обычных FK-колонок, если они остаются
+                foreach (var col in columns.Where(c => c.IsForeignKey))
+                {
+                    try
+                    {
+                        CreateForeignKeyInExistingTable(
+                            ownerTable: newTableName,
+                            fkColumnName: col.Name,
+                            referencedTable: col.ReferencedTable,
+                            referencedColumn: col.ReferencedColumn);
+                    }
+                    catch (Exception ex2)
+                    {
+                        fkSuccess = false;
+                        fkErrors +=
+                            $"Ошибка связи {newTableName}.{col.Name} → {col.ReferencedTable}.{col.ReferencedColumn}: {ex2.Message}\n";
                     }
                 }
 
@@ -713,6 +769,56 @@ namespace BeautySalonApp.Forms
             return $"CREATE TABLE [{tableName}] ({string.Join(", ", columnDefinitions)})";
         }
 
+        private void AddForeignKeyFieldInOtherTable(
+    string parentTable,   // новая таблица с PK
+    string parentColumn,  // PK
+    string childTable)    // существующая таблица, куда добавляем FK
+        {
+            using (var connection = db.GetConnection())
+            {
+                connection.Open();
+
+                // Тип PK-столбца в новой таблице
+                string sqlType = GetSqlTypeForColumn(parentTable, parentColumn);
+
+                // Имя поля FK в дочерней таблице (можно изменить под себя)
+                string fkColumnName = parentTable + "_" + parentColumn;
+
+                // 1. Добавляем поле в дочернюю таблицу
+                using (var cmdAdd = new OleDbCommand(
+                    $"ALTER TABLE [{childTable}] ADD COLUMN [{fkColumnName}] {sqlType}",
+                    connection))
+                {
+                    cmdAdd.ExecuteNonQuery();
+                }
+
+                // 2. Создаём внешний ключ childTable.fkColumnName -> parentTable.parentColumn
+                string constraintName = $"FK_{childTable}_{fkColumnName}";
+                using (var cmdFk = new OleDbCommand(
+                    $"ALTER TABLE [{childTable}] " +
+                    $"ADD CONSTRAINT [{constraintName}] " +
+                    $"FOREIGN KEY ([{fkColumnName}]) " +
+                    $"REFERENCES [{parentTable}]([{parentColumn}])",
+                    connection))
+                {
+                    cmdFk.ExecuteNonQuery();
+                }
+
+                // 3. Записываем связь в AppRelations для последующего удаления
+                using (var cmdRel = new OleDbCommand(
+                    "INSERT INTO AppRelations " +
+                    "(ParentTable, ParentColumn, ChildTable, ChildColumn, ConstraintName) " +
+                    "VALUES (@pTab, @pCol, @cTab, @cCol, @name)", connection))
+                {
+                    cmdRel.Parameters.AddWithValue("@pTab", parentTable);
+                    cmdRel.Parameters.AddWithValue("@pCol", parentColumn);
+                    cmdRel.Parameters.AddWithValue("@cTab", childTable);
+                    cmdRel.Parameters.AddWithValue("@cCol", fkColumnName);
+                    cmdRel.Parameters.AddWithValue("@name", constraintName);
+                    cmdRel.ExecuteNonQuery();
+                }
+            }
+        }
 
         private bool AddForeignKeyConstraints(string tableName, List<TableColumn> foreignKeyColumns, out string errorMessages)
         {

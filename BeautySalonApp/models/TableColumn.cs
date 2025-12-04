@@ -8,5 +8,6 @@
         public bool IsForeignKey { get; set; }
         public string ReferencedTable { get; set; }
         public string ReferencedColumn { get; set; }
+        public string PkTargetTable { get; set; }
     }
 }
