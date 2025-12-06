@@ -252,99 +252,150 @@ namespace BeautySalonApp.Forms
         {
             try
             {
-                // Извлекаем ID клиента из текста (формат: "ID - Имя Фамилия")
+                // 1. Проверка услуги
+                ComboboxItem serviceItem = cmbAppointmentService.SelectedItem as ComboboxItem;
+                if (serviceItem == null)
+                {
+                    MessageBox.Show("Выберите услугу из списка!", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                int serviceId = Convert.ToInt32(serviceItem.Value);
+
+                // 2. Определяем клиента
                 string clientText = cmbAppointmentClient.Text;
-                if (!int.TryParse(clientText.Split('-')[0].Trim(), out int clientId))
+                if (string.IsNullOrWhiteSpace(clientText))
                 {
-                    MessageBox.Show("Некорректный формат клиента! Используйте поиск для выбора клиента.", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Выберите клиента!", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                // Извлекаем ID услуги из текста (формат: "ID - Название услуги")
-                string serviceText = cmbAppointmentService.Text;
-                if (!int.TryParse(serviceText.Split('-')[0].Trim(), out int serviceId))
+                int clientId = -1;
+
+                // Пытаемся найти клиента в списке по тексту
+                foreach (object obj in cmbAppointmentClient.Items)
                 {
-                    MessageBox.Show("Некорректный формат услуги! Используйте поиск для выбора услуги.", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
+                    ComboboxItem item = obj as ComboboxItem;
+                    if (item != null && string.Equals(item.Text, clientText, StringComparison.OrdinalIgnoreCase))
+                    {
+                        clientId = Convert.ToInt32(item.Value);
+                        break;
+                    }
                 }
 
-                // Проверяем статус
-                if (cmbAppointmentStatus.SelectedItem == null)
+                // Если не нашли в списке — создаем нового клиента
+                if (clientId == -1)
                 {
-                    MessageBox.Show("Выберите статус записи!", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
+                    string[] parts = clientText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 2)
+                    {
+                        MessageBox.Show("Введите имя и фамилию клиента через пробел.", "Ошибка",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+
+                    string firstName = parts[0];
+                    string lastName = parts[1];
+                    string phone = "Не указан";
+
+                    string insertClient = "INSERT INTO Clients (FirstName, LastName, Phone) VALUES (?, ?, ?)";
+                    OleDbParameter[] clientParams = new OleDbParameter[]
+                    {
+                new OleDbParameter("@FirstName", firstName),
+                new OleDbParameter("@LastName",  lastName),
+                new OleDbParameter("@Phone",     phone)
+                    };
+
+                    if (!db.ExecuteNonQuery(insertClient, clientParams))
+                    {
+                        MessageBox.Show("Не удалось создать клиента.", "Ошибка",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    DataTable idTable = db.ExecuteQuery("SELECT @@IDENTITY AS NewId");
+                    clientId = Convert.ToInt32(idTable.Rows[0]["NewId"]);
                 }
 
-                string status = cmbAppointmentStatus.SelectedItem.ToString();
+                // 3. Статус
+                string status = "Запланирован";
+                if (cmbCreateStatus != null && cmbCreateStatus.SelectedItem != null)
+                    status = cmbCreateStatus.SelectedItem.ToString();
 
-                // Создаем запись
-                string insertQuery = @"INSERT INTO Appointments (ClientID, ServiceID, AppointmentDate, Status) 
-                              VALUES (?, ?, ?, ?)";
-                var parameters = new OleDbParameter[]
+                // 4. Вставка записи
+                string insertAppointment = @"INSERT INTO Appointments
+    (ClientID, ServiceID, AppointmentDate, Status)
+    VALUES (?, ?, ?, ?)";
+
+                OleDbParameter[] apParams = new OleDbParameter[]
                 {
-                    new OleDbParameter("@ClientID", clientId),
-                    new OleDbParameter("@ServiceID", serviceId),
-                    new OleDbParameter("@AppointmentDate", dateTimePickerAppointment.Value),
-                    new OleDbParameter("@Status", status)
+    new OleDbParameter("@ClientID", OleDbType.Integer)   { Value = clientId },
+    new OleDbParameter("@ServiceID", OleDbType.Integer)  { Value = serviceId },
+    new OleDbParameter("@AppointmentDate", OleDbType.Date) { Value = dateTimePickerAppointment.Value },
+    new OleDbParameter("@Status", OleDbType.VarChar)     { Value = status }
                 };
 
-                if (db.ExecuteNonQuery(insertQuery, parameters))
+                if (db.ExecuteNonQuery(insertAppointment, apParams))
                 {
                     MessageBox.Show("Запись успешно добавлена!", "Успех",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
+
                     LoadAppointments();
-                    ClearAppointmentFields();
-                }
-                else
-                {
-                    MessageBox.Show("Ошибка при добавлении записи!", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    LoadClientsComboBox();
+                    LoadServicesComboBox();
+
+                    cmbAppointmentClient.Text = "";
+                    cmbAppointmentClient.SelectedItem = null;
+                    cmbAppointmentService.SelectedItem = null;
+                    if (cmbCreateStatus != null) cmbCreateStatus.SelectedIndex = 0;
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при добавлении записи: {ex.Message}", "Ошибка",
+                MessageBox.Show("Ошибка при добавлении записи: " + ex.Message, "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void BtnUpdateAppointment_Click(object sender, EventArgs e)
         {
-            if (dataGridViewAppointments.CurrentRow != null &&
-                cmbAppointmentClient.SelectedItem != null &&
-                cmbAppointmentService.SelectedItem != null)
+            if (dataGridViewAppointments.CurrentRow == null)
+                return;
+
+            ComboboxItem clientItem = cmbEditClient.SelectedItem as ComboboxItem;
+            ComboboxItem serviceItem = cmbEditService.SelectedItem as ComboboxItem;
+
+            if (clientItem == null || serviceItem == null)
             {
-                int id = Convert.ToInt32(dataGridViewAppointments.CurrentRow.Cells["ID"].Value);
-                int clientId = Convert.ToInt32(((ComboboxItem)cmbAppointmentClient.SelectedItem).Value);
-                int serviceId = Convert.ToInt32(((ComboboxItem)cmbAppointmentService.SelectedItem).Value);
-                DateTime appointmentDate = dateTimePickerAppointment.Value;
-                string status = cmbAppointmentStatus.SelectedItem?.ToString();
+                MessageBox.Show("Выберите клиента и услугу из списка.", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
-                if (string.IsNullOrEmpty(status))
-                {
-                    MessageBox.Show("Выберите статус!");
-                    return;
-                }
+            int id = Convert.ToInt32(dataGridViewAppointments.CurrentRow.Cells["ID"].Value);
+            int clientId = Convert.ToInt32(clientItem.Value);
+            int serviceId = Convert.ToInt32(serviceItem.Value);
+            DateTime dt = dateTimePickerEdit.Value;
+            string status = "Запланирован";
+            if (cmbAppointmentStatus.SelectedItem != null)
+                status = cmbAppointmentStatus.SelectedItem.ToString();
 
-                string query = "UPDATE Appointments SET ClientID = ?, ServiceID = ?, AppointmentDate = ?, Status = ? WHERE ID = ?";
-                var parameters = new OleDbParameter[]
-                {
-                    new OleDbParameter("@ClientID", clientId),
-                    new OleDbParameter("@ServiceID", serviceId),
-                    new OleDbParameter("@AppointmentDate", appointmentDate),
-                    new OleDbParameter("@Status", status),
-                    new OleDbParameter("@Id", id)
-                };
+            string query = "UPDATE Appointments SET ClientID = ?, ServiceID = ?, AppointmentDate = ?, Status = ? WHERE ID = ?";
+            OleDbParameter[] parameters = new OleDbParameter[]
+            {
+    new OleDbParameter("@ClientID", OleDbType.Integer)   { Value = clientId },
+    new OleDbParameter("@ServiceID", OleDbType.Integer)  { Value = serviceId },
+    new OleDbParameter("@AppointmentDate", OleDbType.Date) { Value = dt },
+    new OleDbParameter("@Status", OleDbType.VarChar)     { Value = status },
+    new OleDbParameter("@Id", OleDbType.Integer)         { Value = id }
+            };
 
-                if (db.ExecuteNonQuery(query, parameters))
-                {
-                    MessageBox.Show("Запись обновлена!");
-                    LoadAppointments();
-                    ClearAppointmentFields();
-                }
+            if (db.ExecuteNonQuery(query, parameters))
+            {
+                MessageBox.Show("Запись обновлена.", "Успех",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadAppointments();
             }
         }
 
@@ -367,43 +418,37 @@ namespace BeautySalonApp.Forms
 
         private void ClearAppointmentFields()
         {
-            cmbAppointmentClient.Text = "Введите ID или имя клиента...";
-            cmbAppointmentService.Text = "Введите ID или название услуги...";
+            cmbAppointmentClient.Text = "";
+            cmbAppointmentClient.SelectedItem = null;
+
+            cmbAppointmentService.Text = "";
+            cmbAppointmentService.SelectedItem = null;
+
             cmbAppointmentStatus.SelectedIndex = -1;
-            dateTimePickerAppointment.Value = DateTime.Now;
-        }
+            dateTimePickerAppointment.Value = DateTime.Now; 
+        }        
 
         private void DataGridViewAppointments_SelectionChanged(object sender, EventArgs e)
         {
-            if (dataGridViewAppointments.CurrentRow != null)
-            {
-                int clientId = Convert.ToInt32(dataGridViewAppointments.CurrentRow.Cells["ClientID"].Value);
-                int serviceId = Convert.ToInt32(dataGridViewAppointments.CurrentRow.Cells["ServiceID"].Value);
+            if (dataGridViewAppointments.CurrentRow == null)
+                return;
 
-                foreach (ComboboxItem item in cmbAppointmentClient.Items)
-                {
-                    if (Convert.ToInt32(item.Value) == clientId)
-                    {
-                        cmbAppointmentClient.SelectedItem = item;
-                        break;
-                    }
-                }
+            int clientId = Convert.ToInt32(dataGridViewAppointments.CurrentRow.Cells["ClientID"].Value);
+            int serviceId = Convert.ToInt32(dataGridViewAppointments.CurrentRow.Cells["ServiceID"].Value);
 
-                foreach (ComboboxItem item in cmbAppointmentService.Items)
-                {
-                    if (Convert.ToInt32(item.Value) == serviceId)
-                    {
-                        cmbAppointmentService.SelectedItem = item;
-                        break;
-                    }
-                }
+            foreach (ComboboxItem item in cmbEditClient.Items)
+                if (Convert.ToInt32(item.Value) == clientId)
+                    cmbEditClient.SelectedItem = item;
 
-                DateTime appointmentDate = Convert.ToDateTime(dataGridViewAppointments.CurrentRow.Cells["AppointmentDate"].Value);
-                dateTimePickerAppointment.Value = appointmentDate;
+            foreach (ComboboxItem item in cmbEditService.Items)
+                if (Convert.ToInt32(item.Value) == serviceId)
+                    cmbEditService.SelectedItem = item;
 
-                string status = dataGridViewAppointments.CurrentRow.Cells["Status"].Value.ToString();
-                cmbAppointmentStatus.SelectedItem = status;
-            }
+            dateTimePickerEdit.Value = Convert.ToDateTime(
+                dataGridViewAppointments.CurrentRow.Cells["AppointmentDate"].Value);
+
+            cmbAppointmentStatus.SelectedItem =
+                dataGridViewAppointments.CurrentRow.Cells["Status"].Value.ToString();
         }
 
         private void BtnCompleteAppointment_Click(object sender, EventArgs e)
