@@ -19,7 +19,7 @@ namespace BeautySalonApp.Forms
             InitializeComponent();
             currentUser = user;
             InitializeServicesTab(tabServices);
-            InitializeClientSearchTab(tabClientSearch);
+            //InitializeClientSearchTab(tabClientSearch);
             this.Load += UserForm_Load;
         }
 

@@ -65,13 +65,13 @@ namespace BeautySalonApp.Forms
             // 
             // tabClientSearch
             // 
-            this.tabClientSearch.Location = new System.Drawing.Point(4, 29);
-            this.tabClientSearch.Name = "tabClientSearch";
-            this.tabClientSearch.Padding = new System.Windows.Forms.Padding(3);
-            this.tabClientSearch.Size = new System.Drawing.Size(792, 517);
-            this.tabClientSearch.TabIndex = 1;
-            this.tabClientSearch.Text = "Поиск клиента";
-            this.tabClientSearch.UseVisualStyleBackColor = true;
+            //this.tabClientSearch.Location = new System.Drawing.Point(4, 29);
+            //this.tabClientSearch.Name = "tabClientSearch";
+            //this.tabClientSearch.Padding = new System.Windows.Forms.Padding(3);
+            //this.tabClientSearch.Size = new System.Drawing.Size(792, 517);
+            //this.tabClientSearch.TabIndex = 1;
+            //this.tabClientSearch.Text = "Поиск клиента";
+            //this.tabClientSearch.UseVisualStyleBackColor = true;
             // 
             // UserForm
             // 

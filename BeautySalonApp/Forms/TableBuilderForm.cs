@@ -937,11 +937,11 @@ namespace BeautySalonApp.Forms
                 {
                     connection.Open();
 
-                    // 1. Находим все связи из нашей служебной таблицы AppRelations
-                    var relations = new List<(string ChildTable, string ConstraintName)>();
+                    // 1. Читаем все связи из AppRelations, СТОЛБЕЦ ТОЖЕ ВКЛЮЧАЕМ
+                    var relations = new List<(string ChildTable, string ChildColumn, string ConstraintName)>();
 
                     using (var cmd = new OleDbCommand(
-                        "SELECT ChildTable, ConstraintName " +
+                        "SELECT ChildTable, ChildColumn, ConstraintName " +
                         "FROM AppRelations " +
                         "WHERE ParentTable = @t OR ChildTable = @t", connection))
                     {
@@ -952,13 +952,14 @@ namespace BeautySalonApp.Forms
                             while (r.Read())
                             {
                                 string childTable = r["ChildTable"].ToString();
+                                string childColumn = r["ChildColumn"].ToString();
                                 string constraintName = r["ConstraintName"].ToString();
-                                relations.Add((childTable, constraintName));
+                                relations.Add((childTable, childColumn, constraintName));
                             }
                         }
                     }
 
-                    // 2. Снимаем все найденные внешние ключи
+                    // 2. Снимаем внешние ключи
                     foreach (var rel in relations)
                     {
                         string sqlDropFk =
@@ -973,11 +974,32 @@ namespace BeautySalonApp.Forms
                         }
                         catch
                         {
-                            // если не получилось снять constraint – продолжаем остальные
+                            // игнорируем, продолжаем
                         }
                     }
 
-                    // 3. Удаляем записи о связях для этой таблицы из AppRelations
+                    // 3. Удаляем сами столбцы‑FK из дочерних таблиц
+                    foreach (var rel in relations)
+                    {
+                        // если удаляем таблицу‑родителя, то удаляем поле в дочерней
+                        // если удаляем таблицу‑ребёнка, поле может находиться в ней же
+                        try
+                        {
+                            string sqlDropCol =
+                                $"ALTER TABLE [{rel.ChildTable}] DROP COLUMN [{rel.ChildColumn}]";
+
+                            using (var cmdDropCol = new OleDbCommand(sqlDropCol, connection))
+                            {
+                                cmdDropCol.ExecuteNonQuery();
+                            }
+                        }
+                        catch
+                        {
+                            // колонка могла быть изменена/удалена вручную — не падаем
+                        }
+                    }
+
+                    // 4. Удаляем записи о связях
                     using (var cmdDel = new OleDbCommand(
                         "DELETE FROM AppRelations WHERE ParentTable = @t OR ChildTable = @t",
                         connection))
@@ -986,7 +1008,7 @@ namespace BeautySalonApp.Forms
                         cmdDel.ExecuteNonQuery();
                     }
 
-                    // 4. Удаляем саму таблицу
+                    // 5. Удаляем саму таблицу
                     using (var cmdDrop = new OleDbCommand(
                         $"DROP TABLE [{tableName}]", connection))
                     {
@@ -994,7 +1016,7 @@ namespace BeautySalonApp.Forms
                     }
                 }
 
-                MessageBox.Show($"Таблица '{tableName}' и все связанные с ней ограничения удалены.",
+                MessageBox.Show($"Таблица '{tableName}', все внешние ключи и связанные поля удалены.",
                     "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 LoadExistingTables();

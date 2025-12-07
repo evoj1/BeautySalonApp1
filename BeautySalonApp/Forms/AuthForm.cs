@@ -41,7 +41,7 @@ namespace BeautySalonApp.Forms
             using (var registerForm = new Form())
             {
                 registerForm.Text = "Регистрация нового пользователя";
-                registerForm.Size = new Size(400, 300);
+                registerForm.Size = new Size(470, 330);
                 registerForm.StartPosition = FormStartPosition.CenterParent;
                 registerForm.BackColor = Color.White;
                 registerForm.FormBorderStyle = FormBorderStyle.FixedDialog;
